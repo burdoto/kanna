@@ -4,7 +4,7 @@ command.emoji.import.confirm.guild=Übernehmen in Server
 command.emoji.import.fail.no_exports=Es gibt nichts zu importieren
 command.emoji.import.menu.title=Bitte bestätige den import der Emoji
 command.emoji.import.name=Emoji Importieren
-command.emoji.import.name.duplicate.f.name=Ein Emoji mit dem Namen %s existiert bereits!
+command.emoji.import.name.duplicate.f.name=Emoji mit den Namen %s existieren bereits!
 command.emoji.import.rename.ask.title=Möchtest du die Emoji umbenennen?
 command.emoji.import.rename.desc.multi=Bitte passe die Namen der Emoji entsprechend an%nJede Zeile ist strukturiert wie: `alterName=neuerName`
 command.emoji.import.rename.title=Emoji Umbenennen

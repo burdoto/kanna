@@ -37,7 +37,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -207,11 +206,10 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
         menu.setMaxValues(menu.getOptions().size());
         row.updateComponent(Key.COMMAND_EMOJI_IMPORT_MENU, menu.build());
 
-        var duplicateName = findDuplicateName();
-        if (duplicateName.isPresent()) row.getComponents()
+        if (findDuplicateName().findAny().isPresent()) row.getComponents()
                 .add(Button.danger(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE,
-                                str(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE).formatted(duplicateName.orElseThrow()))
-                        .withDisabled(true));
+                        str(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE).formatted(findDuplicateName().collect(Collectors.joining(
+                                ",")))).withDisabled(true));
         else row.getComponents()
                 .removeIf(comp -> comp instanceof Button btn && Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE.equals(btn.getId()));
 
@@ -241,15 +239,14 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
                 msg.setEmbeds(embeds.stream().filter(Predicate.not(remove::contains)).toList());
 
                 var row = event.getMessage().getActionRows().getFirst();
-                var duplicateName = findDuplicateName();
                 var components = row.getComponents();
                 components.clear();
                 components.add(Button.secondary(Key.RENAME, str(Key.RENAME)));
                 components.add(Button.success(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD,
                         str(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD)));
-                if (duplicateName.isPresent()) components.add(Button.danger(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE,
-                                str(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE).formatted(duplicateName.orElseThrow()))
-                        .withDisabled(true));
+                if (findDuplicateName().findAny().isPresent()) components.add(Button.danger(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE,
+                        str(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE).formatted(findDuplicateName().collect(Collectors.joining(
+                                ",")))).withDisabled(true));
 
                 event.editMessage(msg.setContent(str(Key.COMMAND_EMOJI_IMPORT_RENAME_ASK_TITLE))
                         .setActionRow(components)
@@ -261,12 +258,9 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
         }
     }
 
-    private Optional<String> findDuplicateName() {
+    private Stream<String> findDuplicateName() {
         var registry = bean(EmojiRegistry.class);
-        return selected.stream()
-                .map(RegisteredEmoji::getName)
-                .filter(name -> registry.findByName(name).stream().findAny().isPresent())
-                .findAny();
+        return selected.stream().map(RegisteredEmoji::getName).filter(name -> !registry.findByName(name).isEmpty());
     }
 
     @Override
