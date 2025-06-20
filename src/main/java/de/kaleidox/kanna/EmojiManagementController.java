@@ -261,9 +261,10 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
             var importTasks = new ArrayList<RestAction<?>>();
             var registry    = bean(EmojiRegistry.class);
             var imported = selected.stream().peek(emoji -> {
-                if (!emoji.isExported()) importTasks.add(emoji.export(guild)
-                        .map(appEmoji -> emoji.setEmojiId(appEmoji.getIdLong()))
-                        .map(registry::save));
+                if (!emoji.isExported()) importTasks.add(emoji.export(guild).map(appEmoji -> {
+                    emoji.setUrl(appEmoji.getImageUrl());
+                    return emoji.setEmojiId(appEmoji.getIdLong());
+                }).map(registry::save));
             }).collect(Collectors.toUnmodifiableSet());
 
             RestAction.allOf(importTasks).submit().join();
