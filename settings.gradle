@@ -1,0 +1,3 @@
+rootProject.name = 'kanna'
+
+include('japi')

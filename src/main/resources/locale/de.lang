@@ -1,0 +1,11 @@
+command.emoji.import.menu.title=Bitte bestätige den import der Emoji
+command.emoji.import.name=Emoji Importieren
+command.emoji.import.rename.desc.multi=Bitte passe die Namen der Emoji entsprechend an%nJede Zeile ist strukturiert wie: `alterName=neuerName`
+command.emoji.import.rename.title=Emoji Umbenennen
+command.emoji.import.rename.ask.title=Möchtest du die Emoji umbenennen?
+command.emoji.import.success.f.amount=%d Emoji wurden erfolgreich importiert
+command.emoji.import.fail.no_exports=Es gibt nichts zu importieren
+generic.desc.notfound=Keine Beschreibung
+generic.title.apply=Übernehmen
+generic.title.rename.f.name=%s Umbenennen
+generic.title.rename=Umbenennen
