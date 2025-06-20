@@ -37,6 +37,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -164,8 +165,8 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
                 var emoji = selected.stream()
                         .filter(reg -> reg.getUrl().hashCode() == key)
                         .findAny()
-                        .orElseThrow(() -> new NoSuchElementException("Could not map key '%s' to any selected emoji".formatted(
-                                key)));
+                        .orElseThrow(() -> new NoSuchElementException(
+                                "Could not map key '%s' to duplicateName selected emoji".formatted(key)));
 
                 emoji.setName(mapping.getAsString());
                 changed.add(emoji);
@@ -206,6 +207,14 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
         menu.setMaxValues(menu.getOptions().size());
         row.updateComponent(Key.COMMAND_EMOJI_IMPORT_MENU, menu.build());
 
+        var duplicateName = findDuplicateName();
+        if (duplicateName.isPresent()) row.getComponents()
+                .add(Button.danger(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE,
+                                str(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE).formatted(duplicateName.orElseThrow()))
+                        .withDisabled(true));
+        else row.getComponents()
+                .removeIf(comp -> comp instanceof Button btn && Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE.equals(btn.getId()));
+
         var edit = MessageEditBuilder.fromMessage(message).setEmbeds(embeds).setActionRow(row.getComponents()).build();
         event.editMessage(edit).queue();
 
@@ -231,18 +240,33 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
                             .noneMatch(Objects.requireNonNull(embed.getTitle())::equals)) remove.add(embed);
                 msg.setEmbeds(embeds.stream().filter(Predicate.not(remove::contains)).toList());
 
+                var row = event.getMessage().getActionRows().getFirst();
+                var duplicateName = findDuplicateName();
+                var components = row.getComponents();
+                components.clear();
+                components.add(Button.secondary(Key.RENAME, str(Key.RENAME)));
+                components.add(Button.success(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD,
+                        str(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD)));
+                if (duplicateName.isPresent()) components.add(Button.danger(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE,
+                                str(Key.COMMAND_EMOJI_IMPORT_NAME_DUPLICATE).formatted(duplicateName.orElseThrow()))
+                        .withDisabled(true));
+
                 event.editMessage(msg.setContent(str(Key.COMMAND_EMOJI_IMPORT_RENAME_ASK_TITLE))
-                        .setActionRow(Button.secondary(Key.RENAME, str(Key.RENAME)),
-                                Button.success(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD,
-                                        str(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD))
-                                //,Button.success(Key.COMMAND_EMOJI_IMPORT_CONFIRM_APP, str(Key.COMMAND_EMOJI_IMPORT_CONFIRM_APP))
-                        )
+                        .setActionRow(components)
                         .build()).queue();
                 break;
             case Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD:
                 applyChanges(jda.getGuildById(event.getValues().getFirst()), event);
                 break;
         }
+    }
+
+    private Optional<String> findDuplicateName() {
+        var registry = bean(EmojiRegistry.class);
+        return selected.stream()
+                .map(RegisteredEmoji::getName)
+                .filter(name -> registry.findByName(name).stream().findAny().isPresent())
+                .findAny();
     }
 
     @Override
@@ -287,8 +311,8 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
     private interface Key {
         String RENAME                                   = "generic.title.rename";
         String RENAME_SPECIFIC                          = "generic.title.rename.f.name";
-        String APPLY                                    = "generic.title.apply";
         String COMMAND_EMOJI_IMPORT_NAME                = "command.emoji.import.name";
+        String COMMAND_EMOJI_IMPORT_NAME_DUPLICATE      = "command.emoji.import.name.duplicate.f.name";
         String COMMAND_EMOJI_IMPORT_MENU                = "command.emoji.import.menu";
         String COMMAND_EMOJI_IMPORT_MENU_TITLE          = "command.emoji.import.menu.title";
         String COMMAND_EMOJI_IMPORT_RENAME_ASK_TITLE    = "command.emoji.import.rename.ask.title";
