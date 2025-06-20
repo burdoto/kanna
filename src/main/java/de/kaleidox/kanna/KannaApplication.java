@@ -31,7 +31,8 @@ import java.util.Locale;
 @SpringBootApplication
 @ComponentScan(basePackageClasses = ApplicationContextProvider.class)
 public class KannaApplication {
-    public static final File  COMMAND_PURGE_FILE = new File("./purge_commands");
+    public static final long KANNAS_CAVE_GUILD_ID = 1385561216713494660L;
+    public static final File COMMAND_PURGE_FILE   = new File("./purge_commands");
     public static final Color THEME              = new Color(0xe69cd9);
     public static final Color WARNING            = new Color(0x493381);
 

@@ -4,6 +4,8 @@ import de.kaleidox.kanna.entity.RegisteredEmoji;
 import de.kaleidox.kanna.repo.EmojiRegistry;
 import lombok.Value;
 import net.dv8tion.jda.api.JDA;
+import net.dv8tion.jda.api.Permission;
+import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.ISnowflake;
 import net.dv8tion.jda.api.entities.MessageEmbed;
 import net.dv8tion.jda.api.entities.channel.middleman.GuildChannel;
@@ -16,6 +18,7 @@ import net.dv8tion.jda.api.events.interaction.component.StringSelectInteractionE
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.Command;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.components.ComponentInteraction;
 import net.dv8tion.jda.api.interactions.components.buttons.Button;
 import net.dv8tion.jda.api.interactions.components.selections.StringSelectMenu;
 import net.dv8tion.jda.api.interactions.components.text.TextInput;
@@ -30,11 +33,13 @@ import org.comroid.api.info.Log;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -80,6 +85,10 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
                             msg.getAttachments().stream().map(RegisteredEmoji::of),
                             msg.getStickers().stream().map(RegisteredEmoji::of))
                     .flatMap(Function.identity())
+                    .peek(emoji -> {
+                        var name = emoji.getName();
+                        if (!name.matches("\\w+")) emoji.setName(name.replaceAll("\\W", ""));
+                    })
                     .map(emoji -> emoji.setImportedBy(event.getUser().getIdLong())
                             .setImportedFrom(Stream.ofNullable(event.getChannel())
                                     .map(ThrowingFunction.fallback(MessageChannelUnion::asGuildMessageChannel))
@@ -123,27 +132,21 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
                         .build());
                 event.replyModal(modal.build()).queue();
                 break;
-            case Key.APPLY:
-                if (selected.stream().allMatch(RegisteredEmoji::isExported)) {
-                    event.editMessage(str(Key.COMMAND_EMOJI_IMPORT_FAIL_NO_EXPORTS)).queue();
-                    break;
-                }
+            case Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD:
+                var menu = StringSelectMenu.create(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD)
+                        .setDefaultValues(String.valueOf(KannaApplication.KANNAS_CAVE_GUILD_ID));
+                jda.getGuilds()
+                        .stream()
+                        .filter(guild -> guild.getSelfMember().hasPermission(Permission.CREATE_GUILD_EXPRESSIONS))
+                        .forEach(guild -> menu.addOption(guild.getName(), guild.getId()));
+                event.editMessage(new MessageEditBuilder().setEmbeds()
+                        .setContent(str(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD_TITLE))
+                        .setActionRow(menu.setMaxValues(1).build())
+                        .build()).queue();
 
-                event.deferEdit().flatMap(hook -> {
-                    var importTasks = new ArrayList<RestAction<?>>();
-                    var registry    = bean(EmojiRegistry.class);
-                    var imported = selected.stream().peek(emoji -> {
-                        if (!emoji.isExported()) importTasks.add(emoji.export()
-                                .map(appEmoji -> emoji.setEmojiId(appEmoji.getIdLong()))
-                                .map(registry::save));
-                    }).collect(Collectors.toUnmodifiableSet());
-
-                    RestAction.allOf(importTasks).complete();
-                    bean(EmojiRegistry.class).saveAll(imported);
-
-                    clear();
-                    return hook.editOriginal(str(Key.COMMAND_EMOJI_IMPORT_SUCCESS).formatted(imported.size()));
-                }).queue();
+                break;
+            case Key.COMMAND_EMOJI_IMPORT_CONFIRM_APP:
+                applyChanges(null, event);
                 break;
         }
     }
@@ -211,19 +214,35 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
 
     @Override
     public void onStringSelectInteraction(StringSelectInteractionEvent event) {
-        if (!Key.COMMAND_EMOJI_IMPORT_MENU.equals(event.getComponentId())) return;
+        switch (event.getComponentId()) {
+            case Key.COMMAND_EMOJI_IMPORT_MENU:
+                event.getSelectedOptions()
+                        .stream()
+                        .flatMap(option -> importQueue.stream()
+                                .filter(emoji -> String.valueOf(emoji.getUrl().hashCode()).equals(option.getValue())))
+                        .forEach(selected::add);
 
-        event.getSelectedOptions()
-                .stream()
-                .flatMap(option -> importQueue.stream()
-                        .filter(emoji -> String.valueOf(emoji.getUrl().hashCode()).equals(option.getValue())))
-                .forEach(selected::add);
+                var msg = MessageEditBuilder.fromMessage(event.getMessage());
+                var remove = new ArrayList<MessageEmbed>();
+                var embeds = msg.getEmbeds();
+                for (var embed : embeds)
+                    if (selected.stream()
+                            .map(RegisteredEmoji::getName)
+                            .noneMatch(Objects.requireNonNull(embed.getTitle())::equals)) remove.add(embed);
+                msg.setEmbeds(embeds.stream().filter(Predicate.not(remove::contains)).toList());
 
-        event.editMessage(MessageEditBuilder.fromMessage(event.getMessage())
-                .setContent(str(Key.COMMAND_EMOJI_IMPORT_RENAME_ASK_TITLE))
-                .setEmbeds()
-                .setActionRow(Button.secondary(Key.RENAME, str(Key.RENAME)), Button.success(Key.APPLY, str(Key.APPLY)))
-                .build()).queue();
+                event.editMessage(msg.setContent(str(Key.COMMAND_EMOJI_IMPORT_RENAME_ASK_TITLE))
+                        .setActionRow(Button.secondary(Key.RENAME, str(Key.RENAME)),
+                                Button.success(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD,
+                                        str(Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD))
+                                //,Button.success(Key.COMMAND_EMOJI_IMPORT_CONFIRM_APP, str(Key.COMMAND_EMOJI_IMPORT_CONFIRM_APP))
+                        )
+                        .build()).queue();
+                break;
+            case Key.COMMAND_EMOJI_IMPORT_CONFIRM_GUILD:
+                applyChanges(jda.getGuildById(event.getValues().getFirst()), event);
+                break;
+        }
     }
 
     @Override
@@ -232,17 +251,52 @@ public class EmojiManagementController extends ListenerAdapter implements Cleara
         selected.clear();
     }
 
+    private void applyChanges(Guild guild, ComponentInteraction event) {
+        if (selected.stream().allMatch(RegisteredEmoji::isExported)) {
+            event.editMessage(str(Key.COMMAND_EMOJI_IMPORT_FAIL_NO_EXPORTS)).queue();
+            return;
+        }
+
+        event.deferEdit().flatMap(hook -> {
+            var importTasks = new ArrayList<RestAction<?>>();
+            var registry    = bean(EmojiRegistry.class);
+            var imported = selected.stream().peek(emoji -> {
+                if (!emoji.isExported()) importTasks.add(emoji.export(guild)
+                        .map(appEmoji -> emoji.setEmojiId(appEmoji.getIdLong()))
+                        .map(registry::save));
+            }).collect(Collectors.toUnmodifiableSet());
+
+            RestAction.allOf(importTasks).submit().join();
+            bean(EmojiRegistry.class).saveAll(imported);
+
+            clear();
+
+            var str = new StringBuilder();
+            for (var emoji : imported)
+                str.append("\n# %s - %s".formatted(emoji.asCustomEmoji().orElseThrow().getAsMention(),
+                        emoji.getName()));
+            return hook.editOriginal(MessageEditBuilder.fromMessage(event.getMessage())
+                    .setContent(str(Key.COMMAND_EMOJI_IMPORT_SUCCESS).formatted(imported.size()) + '\n' + str)
+                    .setEmbeds(Collections.emptyList())
+                    .setComponents()
+                    .build());
+        }).queue();
+    }
+
     private interface Key {
-        String RENAME                                 = "generic.title.rename";
-        String RENAME_SPECIFIC                        = "generic.title.rename.f.name";
-        String APPLY                                  = "generic.title.apply";
-        String COMMAND_EMOJI_IMPORT_MENU              = "command.emoji.import.menu";
-        String COMMAND_EMOJI_IMPORT_MENU_TITLE        = "command.emoji.import.menu.title";
-        String COMMAND_EMOJI_IMPORT_RENAME_ASK_TITLE  = "command.emoji.import.rename.ask.title";
-        String COMMAND_EMOJI_IMPORT_RENAME_TITLE      = "command.emoji.import.rename.title";
-        String COMMAND_EMOJI_IMPORT_RENAME_MULTI_DESC = "command.emoji.import.rename.multi.desc";
-        String COMMAND_EMOJI_IMPORT_NAME              = "command.emoji.import.name";
-        String COMMAND_EMOJI_IMPORT_SUCCESS           = "command.emoji.import.success.f.amount";
-        String COMMAND_EMOJI_IMPORT_FAIL_NO_EXPORTS   = "command.emoji.import.fail.no_exports";
+        String RENAME                                   = "generic.title.rename";
+        String RENAME_SPECIFIC                          = "generic.title.rename.f.name";
+        String APPLY                                    = "generic.title.apply";
+        String COMMAND_EMOJI_IMPORT_NAME                = "command.emoji.import.name";
+        String COMMAND_EMOJI_IMPORT_MENU                = "command.emoji.import.menu";
+        String COMMAND_EMOJI_IMPORT_MENU_TITLE          = "command.emoji.import.menu.title";
+        String COMMAND_EMOJI_IMPORT_RENAME_ASK_TITLE    = "command.emoji.import.rename.ask.title";
+        String COMMAND_EMOJI_IMPORT_RENAME_TITLE        = "command.emoji.import.rename.title";
+        String COMMAND_EMOJI_IMPORT_RENAME_MULTI_DESC   = "command.emoji.import.rename.multi.desc";
+        String COMMAND_EMOJI_IMPORT_CONFIRM_APP         = "command.emoji.import.confirm.app";
+        String COMMAND_EMOJI_IMPORT_CONFIRM_GUILD       = "command.emoji.import.confirm.guild";
+        String COMMAND_EMOJI_IMPORT_CONFIRM_GUILD_TITLE = "command.emoji.import.confirm.guild.title";
+        String COMMAND_EMOJI_IMPORT_SUCCESS             = "command.emoji.import.success.f.amount";
+        String COMMAND_EMOJI_IMPORT_FAIL_NO_EXPORTS     = "command.emoji.import.fail.no_exports";
     }
 }

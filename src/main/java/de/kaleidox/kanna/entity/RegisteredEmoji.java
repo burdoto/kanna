@@ -11,6 +11,7 @@ import jakarta.persistence.MapKeyColumn;
 import lombok.Data;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
+import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Icon;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.MessageEmbed;
@@ -23,6 +24,7 @@ import org.comroid.annotations.Doc;
 import org.comroid.api.Polyfill;
 import org.comroid.api.attr.Named;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -44,7 +46,8 @@ public class RegisteredEmoji implements Named {
     }
 
     public static RegisteredEmoji of(Message.Attachment attachment) {
-        return new RegisteredEmoji(attachment.getFileName(), attachment.getUrl());
+        var fileName = attachment.getFileName();
+        return new RegisteredEmoji(fileName.substring(0, fileName.lastIndexOf('.')), attachment.getUrl());
     }
 
     public static RegisteredEmoji of(StickerItem stickerItem) {
@@ -107,10 +110,17 @@ public class RegisteredEmoji implements Named {
     }
 
     public RestAction<? extends CustomEmoji> export() {
+        return export(null);
+    }
+
+    public RestAction<? extends CustomEmoji> export(@Nullable Guild guild) {
+        Icon icon;
         try (var is = Polyfill.url(url).openStream()) {
-            return bean(JDA.class).createApplicationEmoji(name, Icon.from(is));
+            icon = Icon.from(is);
         } catch (IOException e) {
             throw new RuntimeException("Could not read icon data from url " + url, e);
         }
+
+        return guild != null ? guild.createEmoji(name, icon) : bean(JDA.class).createApplicationEmoji(name, icon);
     }
 }
